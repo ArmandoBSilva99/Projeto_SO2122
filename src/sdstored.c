@@ -103,6 +103,14 @@ void parseTransf(char* filepath){
 
 
 int main(int argc, char* argv[]){
+
+    /*
+    * 
+    * ./sdstored ../etc/sdstored.conf SDStore-transf/
+    * 
+    */
+
+
     if (argc != 3){
         perror("Número de argumentos inválidos! Tente:\n./server config-filename filters-folder\n");
         return -1;
@@ -115,10 +123,13 @@ int main(int argc, char* argv[]){
 
     while(1){
 
+        printf("In while\n");
+
         char buffer[2048];
         int client_server_fifo = open("client_server_fifo", O_RDONLY);
+        if (client_server_fifo == -1) printf("ERRO\n");
         read(client_server_fifo, buffer, 2048);
-
+        
         printf("INSIDE FIFO: %s\n", buffer);
 
         if(strncmp(buffer, "proc-file", 9) == 0){
@@ -131,6 +142,6 @@ int main(int argc, char* argv[]){
             // DO ADVANCED THINGS
         }
 
-
+        close(client_server_fifo);
     }
 }
