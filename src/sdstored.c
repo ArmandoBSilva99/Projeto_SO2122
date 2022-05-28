@@ -7,30 +7,52 @@
 #include <stdlib.h>
 
 #define MAX_BUF 1024
+#define MAX_TRANSF 7
 
-struct transformation{
+struct transformation
+{
     char* name;
+    int running;
     int max;
 }* Transformation;
 
 struct transformation transf[7];
 char filters_folder[30];
 
-ssize_t myreadln(int fildes, void* buf, size_t nbyte){
+ssize_t myreadln(int fildes, void* buf, size_t nbyte)
+{
     ssize_t size = 0;
     char c;
     char* buff = (char*)buf;
-    while (size < nbyte && read(fildes, &c, 1) > 0) {
+
+    while (size < nbyte && read(fildes, &c, 1) > 0) 
+    {
         if (c == '\0')
             return size;
+        
         buff[size++] = c;
+        
         if (c == '\n')
             return size;
     }
     return size;
 }
 
-void exec_commands(char* transformation){
+void getStatus(int server_client_fifo)
+{
+    char* buff = malloc(sizeof(char)*50*MAX_TRANSF);
+    for (int i = 0;i < MAX_TRANSF; ++i)
+    {
+        char temp[30];
+        sprintf(temp,"transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
+        strcat(buff,temp);
+    }
+
+    write(server_client_fifo,buff,strlen(buff));
+}
+
+void exec_commands(char* transformation)
+{
 
     char nop[100];
     sprintf(nop,"%s/nop",filters_folder);
@@ -76,8 +98,9 @@ void exec_commands(char* transformation){
         execl(decrypt,"decrypt", NULL);    
 }
 
-void transform(char* input_file, char* output_file, char** transformations){
-
+//TODO Esta funcao está uma bosta, temos de a mudar
+void transform(char* input_file, char* output_file, char** transformations)
+{
     int fd_in = open(input_file, O_RDONLY, 0644);
     int fd_out = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     
@@ -88,13 +111,16 @@ void transform(char* input_file, char* output_file, char** transformations){
 
     int status[num_transformations];
 
-    if(num_transformations > 1) {
-        for(int i = 0; i < num_transformations; i++){
-
+    if(num_transformations > 1) 
+    {
+        for(int i = 0; i < num_transformations; i++)
+        {
             //First Transformation
-            if (i == 0){
+            if (i == 0)
+            {
                 pipe(p[i]);
-                if (fork()){
+                if (fork())
+                {
                     dup2(fd_in, 0);
                     close(fd_in);
 
@@ -107,15 +133,17 @@ void transform(char* input_file, char* output_file, char** transformations){
 
                     _exit(0);
                 }
-                else {
+                else 
+                {
                     close(p[i][1]);                
                 }
             }
 
             //Last Transformation
-            else if (i == num_transformations - 1){
-                if (fork()){
-
+            else if (i == num_transformations - 1)
+            {               
+                if (fork())
+                {
                     dup2(fd_out, 1);
                     close(fd_out);
 
@@ -127,15 +155,18 @@ void transform(char* input_file, char* output_file, char** transformations){
                     _exit(0);
 
                 }
-                else {
+                else 
+                {
                     close(p[i-1][0]);
                 }
             }
 
             //In between Transformations 
-            else {
+            else 
+            {
                 pipe(p[i]);
-                if (fork()){
+                if (fork())
+                {
                     close(p[i][0]);
 
                     dup2(p[i][1], 1);
@@ -148,7 +179,8 @@ void transform(char* input_file, char* output_file, char** transformations){
 
                     _exit(0);
                 }
-                else {
+                else 
+                {
                     close(p[i][1]);
                     close(p[i-1][0]);
                 }
@@ -158,8 +190,10 @@ void transform(char* input_file, char* output_file, char** transformations){
         for(int w = 0; w < num_transformations; w++)
             wait(&status[w]);
     }
-    else {
-        if(fork()){
+    else 
+    {
+        if(fork())
+        {
             dup2(fd_in, 0);
             dup2(fd_out, 1);
             close(fd_in);
@@ -169,31 +203,36 @@ void transform(char* input_file, char* output_file, char** transformations){
 
             _exit(0);
         }
-        else {
+        else 
+        {
             wait(&status[0]);
         }
-    }        
-
+    }       
 }
 
 
-void fillTransf(char * line, int i){
+void fillTransf(char * line, int i)
+{
     transf[i].name = strdup(strtok(line, " "));
+    transf[i].running = 0;
     transf[i].max = atoi(strtok(NULL, "\n"));
 }
 
 void parseTransf(char* filepath){
 
     int fd;
-    if((fd = open(filepath, O_RDONLY, 0644)) == -1){
+    
+    if((fd = open(filepath, O_RDONLY, 0644)) == -1)
+    {
         perror("File doesn't exist!\n");
         exit(-1);
     }
-    printf("heyo\n");
+    
     char* line = malloc(sizeof(char) * MAX_BUF);
     int i=0;
 
-    while((myreadln(fd, line, 30) > 0) && i < 7){
+    while((myreadln(fd, line, 30) > 0) && i < 7)
+    {
         fillTransf(line, i); 
         i++;
     }
@@ -201,7 +240,58 @@ void parseTransf(char* filepath){
     close(fd);
 }
 
-int main(int argc, char* argv[]){
+void procfile(char* buffer)
+{
+    char* args = buffer + 10; // removes proc-file and space
+
+    /*
+    * PARSING ARGS 
+    */
+
+    char* token = strtok(args," ");
+    char* input_files = malloc(sizeof(char*));
+    char* output_files = malloc(sizeof(char*));
+    strcpy(input_files, token);
+    token = strtok(NULL, " ");
+    strcpy(output_files, token);
+    printf("INPUT FILE: %s\nOUTPUT FILE: %s\n", input_files, output_files);
+    token = strtok(NULL, " ");
+    char* transformations[7]; // 7 max commands??
+    int i = 0;
+    while(token != NULL)
+    {
+        transformations[i] = strdup(token);
+        printf("commands[%d] = %s\n", i, transformations[i]);
+        token = strtok(NULL, " ");
+        i++;  
+    }
+    transformations[i] = '\0';
+
+    /*
+    * APPLY TRANSFORMATIONS
+    */
+
+    transform(input_files, output_files, transformations);
+}
+
+void connectionsHandler()
+{
+    //fork para novos clients
+    pid_t child = fork();
+
+    if(child == 0)
+    {
+
+        //TODO
+        //smpre preparado para receber mais clientes
+        //estrutura para guardar os fifos
+        while(1){}
+
+    }
+}
+
+int main(int argc, char* argv[])
+{
 
     /*
     * 
@@ -209,8 +299,8 @@ int main(int argc, char* argv[]){
     * 
     */
 
-
-    if (argc != 3){
+    if (argc != 3)
+    {
         perror("Número de argumentos inválidos! Tente:\n./server config-filename filters-folder\n");
         return -1;
     }
@@ -220,51 +310,43 @@ int main(int argc, char* argv[]){
 
     mkfifo("client_server_fifo", 0644);
 
-    while(1){
+    while(1)
+    {
 
         printf("In while\n");
 
+        connectionsHandler();
+
         char buffer[2048];
         int client_server_fifo = open("client_server_fifo", O_RDONLY);
-        if (client_server_fifo == -1) printf("ERRO\n");
-        read(client_server_fifo, buffer, 2048);
+
+        //DELETE
+        printf("FIFO CREATED\n");
+
+        if (client_server_fifo == -1) 
+            printf("ERRO\n");
         
-        printf("INSIDE FIFO: %s\n", buffer);
+        //TODO
+        //Mudar este read para adicionar processos filhos para cada client
+        // for(i = 0; i < MAX; i++)
+        // c =  fork(), if( c == 0)
+        // read from fifo
+        read(client_server_fifo, buffer, 2048);
 
-        if(strncmp(buffer, "proc-file", 9) == 0){
-            char* args = buffer + 10; // removes proc-file and space
-
-            /*
-            * PARSING ARGS 
-            */
-            char* token = strtok(args," ");
-            char* input_files = malloc(sizeof(char*));
-            char* output_files = malloc(sizeof(char*));
-            strcpy(input_files, token);
-            token = strtok(NULL, " ");
-            strcpy(output_files, token);
-            printf("INPUT FILE: %s\nOUTPUT FILE: %s\n", input_files, output_files);
-            token = strtok(NULL, " ");
-            char* transformations[7]; // 7 max commands??
-            int i = 0;
-            while(token != NULL){
-                transformations[i] = strdup(token);
-                printf("commands[%d] = %s\n", i, transformations[i]);
-                token = strtok(NULL, " ");
-                i++;  
-            }
-            transformations[i] = '\0';
-
-            /*
-            * APPLY TRANSFORMATIONS
-            */
-
-            transform(input_files, output_files, transformations);
+        int server_client_fifo = open("server_client_fifo", O_WRONLY);
+        
+        if(strncmp(buffer, "proc-file", 9) == 0)
+        {
+            procfile(buffer);
         }
-        if(strncmp(buffer, "status", 6) == 0){
-            // DO THINGS
+
+        if(strncmp(buffer, "status", 6) == 0)
+        {
+            getStatus(server_client_fifo);
         }
-        if(strncmp(buffer, "proc-file priority",18) == 0){
+
+        if(strncmp(buffer, "proc-file priority",18) == 0)
+        {
             // DO ADVANCED THINGS
         }
 
