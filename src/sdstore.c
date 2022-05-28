@@ -22,7 +22,7 @@ int main(int argc, char* argv[]){
 
     for(int i = 2; i < argc; i++)
     {
-        char* arg = malloc(sizeof(char*));
+        char* arg = malloc(sizeof(char) * (strlen(argv[i]) + 1));
         sprintf(arg, " %s", argv[i]);
         strcat(args, arg);
     }

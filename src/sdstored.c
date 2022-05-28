@@ -55,26 +55,26 @@ void exec_commands(char* transformation)
 {
 
     char nop[100];
-    sprintf(nop,"%s/nop",filters_folder);
+    sprintf(nop,"../%snop",filters_folder);
 
     char bcompress[100]; 
-    sprintf(bcompress,"%s/bcompress",filters_folder);
+    sprintf(bcompress,"../%sbcompress",filters_folder);
 
     
     char bdecompress[100]; 
-    sprintf(bdecompress,"%s/bdecompress",filters_folder);
+    sprintf(bdecompress,"../%sbdecompress",filters_folder);
 
     char gcompress[100]; 
-    sprintf(gcompress,"%s/gcompress",filters_folder);
+    sprintf(gcompress,"../%sgcompress",filters_folder);
     
     char gdecompress[100]; 
-    sprintf(gdecompress,"%s/gdecompress",filters_folder);
+    sprintf(gdecompress,"../%sgdecompress",filters_folder);
 
     char encrypt[100]; 
-    sprintf(encrypt,"%s/encrypt",filters_folder);
+    sprintf(encrypt,"../%sencrypt",filters_folder);
 
     char decrypt[100]; 
-    sprintf(decrypt,"%s/decrypt",filters_folder);
+    sprintf(decrypt,"../%sdecrypt",filters_folder);
 
     if (strcmp(transformation,"nop") == 0)        
         execl(nop,"nop", NULL);
@@ -103,9 +103,12 @@ void transform(char* input_file, char* output_file, char** transformations)
 {
     int fd_in = open(input_file, O_RDONLY, 0644);
     int fd_out = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
     
     int num_transformations;
-    for(num_transformations = 0; transformations[num_transformations] != NULL; num_transformations++);
+    for(num_transformations = 0; transformations[num_transformations]; num_transformations++);
+
+    printf("Num_T: %d\n", num_transformations);
 
     int p[num_transformations - 1][2];
 
@@ -192,13 +195,13 @@ void transform(char* input_file, char* output_file, char** transformations)
     }
     else 
     {
-        if(fork())
+        if(fork() == 0)
         {
+            printf("IN FORK\n");
             dup2(fd_in, 0);
             dup2(fd_out, 1);
             close(fd_in);
             close(fd_out);
-
             exec_commands(transformations[0]);
 
             _exit(0);
@@ -228,6 +231,7 @@ void parseTransf(char* filepath){
         exit(-1);
     }
     
+
     char* line = malloc(sizeof(char) * MAX_BUF);
     int i=0;
 
@@ -244,28 +248,38 @@ void procfile(char* buffer)
 {
     char* args = buffer + 10; // removes proc-file and space
 
+    printf("ARGS: %s\n", args);
+
     /*
     * PARSING ARGS 
     */
 
     char* token = strtok(args," ");
-    char* input_files = malloc(sizeof(char*));
-    char* output_files = malloc(sizeof(char*));
+
+    char* input_files = malloc(sizeof(char) * 50);
+    char* output_files = malloc(sizeof(char) * 50);
+
+    printf("Going to copy\n");
+
     strcpy(input_files, token);
     token = strtok(NULL, " ");
     strcpy(output_files, token);
     printf("INPUT FILE: %s\nOUTPUT FILE: %s\n", input_files, output_files);
-    token = strtok(NULL, " ");
+    token = strtok(NULL, " \0");
     char* transformations[7]; // 7 max commands??
     int i = 0;
+
     while(token != NULL)
     {
-        transformations[i] = strdup(token);
+        
+        transformations[i] = malloc(sizeof(char) * strlen(token));
+        strcpy(transformations[i], token);
         printf("commands[%d] = %s\n", i, transformations[i]);
-        token = strtok(NULL, " ");
+        token = strtok(NULL, " \0");
         i++;  
     }
     transformations[i] = '\0';
+    free(token);
 
     /*
     * APPLY TRANSFORMATIONS
@@ -315,9 +329,9 @@ int main(int argc, char* argv[])
 
         printf("In while\n");
 
-        connectionsHandler();
+        //connectionsHandler();
 
-        char buffer[2048];
+        char* buffer = calloc(2048, sizeof(char));
         int client_server_fifo = open("client_server_fifo", O_RDONLY);
 
         //DELETE
