@@ -9,6 +9,21 @@
 #define MAX_BUF 1024
 #define MAX_TRANSF 7
 
+//struct processos
+struct process
+{
+    int pid;
+    //1 -> Proc-File 0 -> Status
+    int message;
+    //0 -> pending 1 -> executing
+    int status;
+
+    char* request;
+    char** transformations;
+    struct process *next;
+};
+struct process *start=NULL;
+
 struct transformation
 {
     char* name;
@@ -17,33 +32,109 @@ struct transformation
 }* Transformation;
 
 struct transformation transf[7];
-char filters_folder[30];
+char transf_folder[30];
 
-void addRunningTransf(char** transformations){
-    for(int i = 0; transformations[i]; i++){
-        for(int j = 0; j < 7; j++) {
+void printProcess()
+{
+    struct process *temp;
+
+    temp = start;
+
+    while(temp)
+    {
+        printf("PID: %d\n",temp->pid);
+        if(temp->message)
+        {
+            printf("Proc-File\n");
+            for(int i = 0; temp->transformations[i];i++)
+                printf("Transf: %s\n",temp->transformations[i]);
+        }
+        temp = temp->next;
+    }
+}
+
+struct process* insert_client(int pid, char* buffer)
+{
+    struct process *temp,*ptr;
+    char* mess = malloc(sizeof(char)*300);
+    strcpy(mess,buffer);
+
+    temp=(struct process *)malloc(sizeof(struct process));
+
+    temp->pid = pid;
+    
+    if(strncmp(buffer, "status", 6) == 0)
+        temp->message = 0;
+    else
+    {
+        temp->request = mess;
+        temp->message = 1;
+        char* args = buffer + 10;
+        char* token = strtok(args," ");
+        token = strtok(NULL, " ");
+        token = strtok(NULL, " \0");
+
+        char** transformations = malloc(sizeof(char*)*MAX_TRANSF);
+        int i = 0;
+        while(token != NULL)
+        {
+            transformations[i] = malloc(sizeof(char) * strlen(token));
+            strcpy(transformations[i], token);
+            token = strtok(NULL, " \0");
+            i++;  
+        }
+        transformations[i] = '\0';
+        free(token);
+        temp->transformations = transformations;
+    }
+
+
+    temp->next = NULL;
+    if(start==NULL)
+    {
+        start=temp;
+        return start;
+    }
+    else
+    {
+        ptr=start;
+        while(ptr->next !=NULL)
+        {
+            ptr=ptr->next ;
+        }
+        ptr->next =temp;
+        return temp;
+    }
+}
+
+void addRunningTransf(char** transformations)
+{
+    printf("Adicionado!\n");
+    for(int i = 0; transformations[i]; i++)
+    {
+        for(int j = 0; j < MAX_TRANSF; j++) 
+        {
             if ((strcmp(transformations[i], transf[j].name) == 0))
                 transf[j].running++;         
         }
     }
 }
 
-void removeRunningTransf(char** transformations){
-    printf("Started\n");
-    for(int i = 0; i < 2; i++) {
-        printf("I : %d\n", i);
-        for(int j = 0; j < 7; j++) {
-            printf("J : %d\n", j);
+void removeRunningTransf(char** transformations)
+{    
+    for(int i = 0; i < 2; i++) 
+    {
+        for(int j = 0; j < 7; j++) 
+        {
             if ((strcmp(transformations[i], transf[j].name) == 0))
                 transf[j].running--;         
         }
     }
-    printf("worked\n");
 }
 
 int checkConfig(char** transformations){
     for(int i = 0; transformations[i]; i++) {
-        for(int j = 0; j < 7; j++) {
+        for(int j = 0; j < MAX_TRANSF; j++) {
             if ((strcmp(transformations[i], transf[j].name) == 0) && (transf[j].max == transf[j].running))
                 return 0;         
         }
@@ -52,10 +143,23 @@ int checkConfig(char** transformations){
 }
 
 
-void sigchild_handler(int signum){
+void sigchild_handler(int signum)
+{
     char* transf[2] = { "bcompress", "bdecompress" };
-    
-    removeRunningTransf(transf);
+    int status;
+    pid_t pid;
+
+    //Devolve o pid do processo q morreu
+    while((pid = waitpid(-1,&status,WNOHANG)) > 0)
+    {
+        struct process* temp = start;
+        while(temp)
+        {
+            if(temp->pid==pid && temp->message == 1)
+                removeRunningTransf(transf);
+            temp = temp->next;
+        }
+    }
 }
 
 ssize_t myreadln(int fildes, void* buf, size_t nbyte)
@@ -93,26 +197,26 @@ void getStatus(int server_client_fifo)
 void exec_commands(char* transformation)
 {
     char nop[100];
-    sprintf(nop,"%snop",filters_folder);
+    sprintf(nop,"%snop",transf_folder);
 
     char bcompress[100]; 
-    sprintf(bcompress,"%sbcompress",filters_folder);
+    sprintf(bcompress,"%sbcompress",transf_folder);
 
     
     char bdecompress[100]; 
-    sprintf(bdecompress,"%sbdecompress",filters_folder);
+    sprintf(bdecompress,"%sbdecompress",transf_folder);
 
     char gcompress[100]; 
-    sprintf(gcompress,"%sgcompress",filters_folder);
+    sprintf(gcompress,"%sgcompress",transf_folder);
     
     char gdecompress[100]; 
-    sprintf(gdecompress,"%sgdecompress",filters_folder);
+    sprintf(gdecompress,"%sgdecompress",transf_folder);
 
     char encrypt[100]; 
-    sprintf(encrypt,"%sencrypt",filters_folder);
+    sprintf(encrypt,"%sencrypt",transf_folder);
 
     char decrypt[100]; 
-    sprintf(decrypt,"%sdecrypt",filters_folder);
+    sprintf(decrypt,"%sdecrypt",transf_folder);
 
     if (strcmp(transformation,"nop") == 0)        
         execl(nop,"nop", NULL);
@@ -320,9 +424,6 @@ void procfile(char* buffer, int server_client_fifo)
     * APPLY TRANSFORMATIONS
     */
 
-    while(checkConfig(transformations) == 0);
-    addRunningTransf(transformations); 
-
     for (int i = 0;i < MAX_TRANSF; ++i)
     {
         printf("transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
@@ -347,7 +448,7 @@ void procfile(char* buffer, int server_client_fifo)
 
 }
 
-void handler(char* buffer)
+void handler(char* pid_m, char* message)
 {
     int child = fork();
  
@@ -357,32 +458,27 @@ void handler(char* buffer)
         char* fifoToWrite = malloc(sizeof(char)*30);
         
         strcpy(fifoToRead,"client_server_fifo_");
-        strcat(fifoToRead, buffer);
+        strcat(fifoToRead, pid_m);
         
         strcpy(fifoToWrite,"server_client_fifo_");
-        strcat(fifoToWrite, buffer);
+        strcat(fifoToWrite, pid_m);
 
         printf("Proc Filho!\n");
         printf("FILE TO READ: %s\n",fifoToRead);
-        int client_server_fifo = open(fifoToRead, O_RDONLY);
-
-        char buffer[2048];
-        read(client_server_fifo, buffer, 2048);
-        close(client_server_fifo);
 
         int server_client_fifo = open(fifoToWrite, O_WRONLY);
         
-        if(strncmp(buffer, "proc-file", 9) == 0)
+        if(strncmp(message, "proc-file", 9) == 0)
         {
-            procfile(buffer,server_client_fifo);
+            procfile(message,server_client_fifo);
         }
 
-        if(strncmp(buffer, "status", 6) == 0)
+        if(strncmp(message, "status", 6) == 0)
         {
             getStatus(server_client_fifo);
         }
 
-        if(strncmp(buffer, "proc-file priority",18) == 0)
+        if(strncmp(message, "proc-file priority",18) == 0)
         {
             // DO ADVANCED THINGS
         }
@@ -393,6 +489,44 @@ void handler(char* buffer)
 
         _exit(0);
     }
+}
+
+void pendingTasks()
+{
+    int child = fork();
+
+    if(child == 0)
+    {
+        struct process* temp = start; 
+        while(1)
+        {
+            if(temp && temp->status == 1 && checkConfig(temp->transformations))
+            {
+                char* pid_m = malloc(sizeof(char)*10);
+                sprintf(pid_m,"%d",start->pid);
+                handler(pid_m, start->request);
+            }
+            /*if(temp->next == NULL)
+                temp = start;
+            else
+                temp = temp->next;*/
+        }
+
+        _exit(0);
+    }
+}
+
+void printProc(struct process* proc )
+{
+    printf("-------\n");
+    printf("PID: %d\n",proc->pid);
+        if(proc->message)
+        {
+            printf("Proc-File\n");
+            for(int i = 0; proc->transformations[i];i++)
+                printf("Transf: %s\n",proc->transformations[i]);
+        }
+    printf("-------\n");
 }
 
 int main(int argc, char* argv[])
@@ -407,16 +541,18 @@ int main(int argc, char* argv[])
 
     if (argc != 3)
     {
-        perror("Número de argumentos inválidos! Tente:\n./server config-filename filters-folder\n");
+        perror("Número de argumentos inválidos! Tente:\n./server config-filename transf-folder\n");
         return -1;
     }
 
     parseTransf(argv[1]);
-    strcpy(filters_folder,argv[2]);
+    strcpy(transf_folder,argv[2]);
 
     mkfifo("connection_fifo", 0644);
 
     printf("FIFO connection_fifo CREATED\n\n");
+
+    //pendingTasks();
 
     while(1)
     {
@@ -431,9 +567,44 @@ int main(int argc, char* argv[])
         read(connection_fifo, buffer, 2048);
         close(connection_fifo);
 
-        printf("Client %s Connected!\n",buffer);
+        printf("Buffer: %s\n", buffer);
 
-        handler(buffer);
+        char* message = strsep(&buffer, "_");
+
+        char* pid_m = malloc(sizeof(char)*10);
+        strcpy(pid_m,message);    
+        
+        int pid = atoi(pid_m);
+        message = strsep(&buffer, "_");
+        
+        char * insertMessage = strdup(message);
+
+        struct process* proc = insert_client(pid,insertMessage);
+        printf("Client %s Connected!\n",pid_m);
+
+
+        printProc(proc);
+        if(proc->message == 0)
+        {
+            handler(pid_m,message);
+        }
+        else if(proc->message != 0 && checkConfig(proc->transformations) != 0)
+        {
+            addRunningTransf(proc->transformations); 
+            handler(pid_m,message);
+        }
+        else
+        {
+            proc->status = 1;
+            char * tempfifo = malloc(sizeof(char)*50);
+            strcpy(tempfifo,"client_server_fifo_");
+            strcat(tempfifo,pid);
+            int connection_fifo = open(tempfifo, O_WRONLY);
+            write(tempfifo,"Pending",7);
+            close(tempfifo);
+        }
+
+        //printProcess();
         close(connection_fifo);
     }
 }
