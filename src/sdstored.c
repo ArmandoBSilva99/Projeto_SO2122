@@ -97,7 +97,6 @@ void exec_commands(char* transformation)
         execl(decrypt,"decrypt", NULL);    
 }
 
-//TODO Esta funcao está uma bosta, temos de a mudar
 void transform(char* input_file, char* output_file, char** transformations)
 {
     int fd_in = open(input_file, O_RDONLY, 0644);
@@ -113,102 +112,130 @@ void transform(char* input_file, char* output_file, char** transformations)
 
     int status[num_transformations];
 
-    if(num_transformations > 1) 
+    
+    if(num_transformations == 1) 
     {
-        for(int i = 0; i < num_transformations; i++)
-        {
-            //First Transformation
-            if (i == 0)
-            {
-                pipe(p[i]);
-                if (fork())
-                {
-                    dup2(fd_in, 0);
-                    close(fd_in);
+        switch(fork()) {
+            case -1:
+                perror("fork");
 
-                    close(p[i][0]);
-                    
-                    dup2(p[i][1], 1);
-                    close(p[i][1]);
-                    
-                    exec_commands(transformations[i]);
-
-                    _exit(0);
-                }
-                else 
-                {
-                    close(p[i][1]);                
-                }
-            }
-
-            //Last Transformation
-            else if (i == num_transformations - 1)
-            {               
-                if (fork())
-                {
-                    dup2(fd_out, 1);
-                    close(fd_out);
-
-                    dup2(p[i-1][0],0);
-                    close(p[i-1][0]);
-
-                    exec_commands(transformations[i]);
-                    
-                    _exit(0);
-
-                }
-                else 
-                {
-                    close(p[i-1][0]);
-                }
-            }
-
-            //In between Transformations 
-            else 
-            {
-                pipe(p[i]);
-                if (fork())
-                {
-                    close(p[i][0]);
-
-                    dup2(p[i][1], 1);
-                    close(p[i][1]);
-
-                    dup2(p[i-1][0], 0);
-                    close(p[i-1][0]);
-
-                    exec_commands(transformations[i]);
-
-                    _exit(0);
-                }
-                else 
-                {
-                    close(p[i][1]);
-                    close(p[i-1][0]);
-                }
-            }
+            case 0:
+                dup2(fd_in, 0);
+                dup2(fd_out, 1);
+                close(fd_in);
+                close(fd_out);
+                exec_commands(transformations[0]);
         }
-
-        for(int w = 0; w < num_transformations; w++)
-            wait(&status[w]);
     }
-    else 
+    else
     {
-        if(fork() == 0)
+        for(int i = 0; i < num_transformations; i++) 
         {
-            dup2(fd_in, 0);
-            dup2(fd_out, 1);
-            close(fd_in);
-            close(fd_out);
-            exec_commands(transformations[0]);
+            if (i == 0) 
+            {
+                if(pipe(p[i]) != 0) 
+                {
+                    perror("pipe");
+                }
+                switch(fork()) 
+                {
+                    case -1: 
+                        perror("fork");
+                    case 0:
+                        dup2(fd_in, 0);
+                        close(fd_in);
 
-            _exit(0);
+                        close(p[i][0]);
+                    
+                        dup2(p[i][1], 1);
+                        close(p[i][1]);
+                    
+                        exec_commands(transformations[i]);
+
+                        _exit(0);
+                    default: 
+                        close(p[i][1]);
+                }
+            }
+            else if (i == num_transformations-1) 
+            {
+                switch(fork()) {
+                    case -1:
+                        perror("fork");
+                    case 0:
+                        dup2(fd_out, 1);
+                        close(fd_out);
+
+                        dup2(p[i-1][0],0);
+                        close(p[i-1][0]);
+
+                        exec_commands(transformations[i]);
+                    
+                        _exit(0);
+                    default: 
+                        close(p[i-1][0]);
+                }
+            }
+            else {
+                if(pipe(p[i]) != 0) {
+                    perror("pipe");
+                }
+                switch(fork()) {
+                    case -1:
+                        perror("fork");
+                    case 0:
+                        close(p[i][0]);
+
+                        dup2(p[i][1], 1);
+                        close(p[i][1]);
+
+                        dup2(p[i-1][0], 0);
+                        close(p[i-1][0]);
+
+                        exec_commands(transformations[i]);
+
+                        _exit(0);
+                    default:
+                        close(p[i][1]);
+                        close(p[i-1][0]);
+                }
+            }
         }
-        else 
-        {
-            wait(&status[0]);
+    }
+   
+    for(int w = 0; w < num_transformations; w++)
+    {
+        int pid = wait(&status[w]);  
+        printf("Pid: %d\n",pid);
+    }
+}
+
+void addRunningTransf(char** transformations){
+    for(int i = 0; transformations[i]; i++){
+        for(int j = 0; j < 7; j++) {
+            if ((strcmp(transformations[i], transf[j].name) == 0))
+                transf[j].running++;         
         }
-    }       
+    }
+}
+
+void removeRunningTransf(char** transformations){
+    for(int i = 0; transformations[i]; i++) {
+        for(int j = 0; j < 7; j++) {
+            if ((strcmp(transformations[i], transf[j].name) == 0))
+                transf[j].running--;         
+        }
+    }
+}
+
+int checkConfig(char** transformations){
+    for(int i = 0; transformations[i]; i++) {
+        for(int j = 0; j < 7; j++) {
+            if ((strcmp(transformations[i], transf[j].name) == 0) && (transf[j].max == transf[j].running))
+                return 0;         
+        }
+    }
+    return 1;
 }
 
 
@@ -264,7 +291,7 @@ void procfile(char* buffer, int server_client_fifo)
     strcpy(output_files, token);
     printf("INPUT FILE: %s\nOUTPUT FILE: %s\n", input_files, output_files);
     token = strtok(NULL, " \0");
-    char* transformations[7]; // 7 max commands??
+    char* transformations[MAX_TRANSF];
     int i = 0;
 
     while(token != NULL)
@@ -283,8 +310,31 @@ void procfile(char* buffer, int server_client_fifo)
     * APPLY TRANSFORMATIONS
     */
 
-    transform(input_files, output_files, transformations);
+    while(checkConfig(transformations) == 0);
+    addRunningTransf(transformations); 
+
+    for (int i = 0;i < MAX_TRANSF; ++i)
+    {
+        printf("transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
+        
+    }
+
+    transform(input_files, output_files, transformations); 
+    
+    removeRunningTransf(transformations); 
+
+    for (int i = 0;i < MAX_TRANSF; ++i)
+    {
+        printf("transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
+        
+    }
+
+    for(int j = 0; j < i; j++){
+        free(transformations[j]);
+    }
+
     write(server_client_fifo,"concluded\n", 10);
+
 }
 
 void handler(char* buffer)
@@ -327,7 +377,8 @@ void handler(char* buffer)
             // DO ADVANCED THINGS
         }
 
-
+        free(fifoToRead);
+        free(fifoToWrite);
         close(server_client_fifo);
 
         _exit(0);
