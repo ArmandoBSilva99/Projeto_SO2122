@@ -19,6 +19,45 @@ struct transformation
 struct transformation transf[7];
 char filters_folder[30];
 
+void addRunningTransf(char** transformations){
+    for(int i = 0; transformations[i]; i++){
+        for(int j = 0; j < 7; j++) {
+            if ((strcmp(transformations[i], transf[j].name) == 0))
+                transf[j].running++;         
+        }
+    }
+}
+
+void removeRunningTransf(char** transformations){
+    printf("Started\n");
+    for(int i = 0; i < 2; i++) {
+        printf("I : %d\n", i);
+        for(int j = 0; j < 7; j++) {
+            printf("J : %d\n", j);
+            if ((strcmp(transformations[i], transf[j].name) == 0))
+                transf[j].running--;         
+        }
+    }
+    printf("worked\n");
+}
+
+int checkConfig(char** transformations){
+    for(int i = 0; transformations[i]; i++) {
+        for(int j = 0; j < 7; j++) {
+            if ((strcmp(transformations[i], transf[j].name) == 0) && (transf[j].max == transf[j].running))
+                return 0;         
+        }
+    }
+    return 1;
+}
+
+
+void sigchild_handler(int signum){
+    char* transf[2] = { "bcompress", "bdecompress" };
+    
+    removeRunningTransf(transf);
+}
+
 ssize_t myreadln(int fildes, void* buf, size_t nbyte)
 {
     ssize_t size = 0;
@@ -210,35 +249,6 @@ void transform(char* input_file, char* output_file, char** transformations)
     }
 }
 
-void addRunningTransf(char** transformations){
-    for(int i = 0; transformations[i]; i++){
-        for(int j = 0; j < 7; j++) {
-            if ((strcmp(transformations[i], transf[j].name) == 0))
-                transf[j].running++;         
-        }
-    }
-}
-
-void removeRunningTransf(char** transformations){
-    for(int i = 0; transformations[i]; i++) {
-        for(int j = 0; j < 7; j++) {
-            if ((strcmp(transformations[i], transf[j].name) == 0))
-                transf[j].running--;         
-        }
-    }
-}
-
-int checkConfig(char** transformations){
-    for(int i = 0; transformations[i]; i++) {
-        for(int j = 0; j < 7; j++) {
-            if ((strcmp(transformations[i], transf[j].name) == 0) && (transf[j].max == transf[j].running))
-                return 0;         
-        }
-    }
-    return 1;
-}
-
-
 void fillTransf(char * line, int i)
 {
     transf[i].name = strdup(strtok(line, " "));
@@ -340,7 +350,7 @@ void procfile(char* buffer, int server_client_fifo)
 void handler(char* buffer)
 {
     int child = fork();
-
+ 
     if(child == 0)
     {
         char* fifoToRead = malloc(sizeof(char)*30);
@@ -388,6 +398,7 @@ void handler(char* buffer)
 int main(int argc, char* argv[])
 {
 
+    signal(SIGCHLD, sigchild_handler);
     /*
     * 
     * ./sdstored ../etc/sdstored.conf SDStore-transf/
