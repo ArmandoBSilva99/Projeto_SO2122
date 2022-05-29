@@ -17,4 +17,4 @@ obj/sdstore.o: src/sdstore.c
 	gcc -Wall -g -c src/sdstore.c -o obj/sdstore.o
 
 clean:
-	rm -f obj/* tmp/* bin/sdstore bin/sdstored bin/cli*
+	rm -f obj/* tmp/* bin/sdstore bin/sdstored bin/cli* bin/ser* bin/con*

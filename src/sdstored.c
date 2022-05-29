@@ -53,28 +53,27 @@ void getStatus(int server_client_fifo)
 
 void exec_commands(char* transformation)
 {
-
     char nop[100];
-    sprintf(nop,"../%snop",filters_folder);
+    sprintf(nop,"%snop",filters_folder);
 
     char bcompress[100]; 
-    sprintf(bcompress,"../%sbcompress",filters_folder);
+    sprintf(bcompress,"%sbcompress",filters_folder);
 
     
     char bdecompress[100]; 
-    sprintf(bdecompress,"../%sbdecompress",filters_folder);
+    sprintf(bdecompress,"%sbdecompress",filters_folder);
 
     char gcompress[100]; 
-    sprintf(gcompress,"../%sgcompress",filters_folder);
+    sprintf(gcompress,"%sgcompress",filters_folder);
     
     char gdecompress[100]; 
-    sprintf(gdecompress,"../%sgdecompress",filters_folder);
+    sprintf(gdecompress,"%sgdecompress",filters_folder);
 
     char encrypt[100]; 
-    sprintf(encrypt,"../%sencrypt",filters_folder);
+    sprintf(encrypt,"%sencrypt",filters_folder);
 
     char decrypt[100]; 
-    sprintf(decrypt,"../%sdecrypt",filters_folder);
+    sprintf(decrypt,"%sdecrypt",filters_folder);
 
     if (strcmp(transformation,"nop") == 0)        
         execl(nop,"nop", NULL);
@@ -197,7 +196,6 @@ void transform(char* input_file, char* output_file, char** transformations)
     {
         if(fork() == 0)
         {
-            printf("IN FORK\n");
             dup2(fd_in, 0);
             dup2(fd_out, 1);
             close(fd_in);
@@ -244,7 +242,7 @@ void parseTransf(char* filepath){
     close(fd);
 }
 
-void procfile(char* buffer)
+void procfile(char* buffer, int server_client_fifo)
 {
     char* args = buffer + 10; // removes proc-file and space
 
@@ -286,21 +284,53 @@ void procfile(char* buffer)
     */
 
     transform(input_files, output_files, transformations);
+    write(server_client_fifo,"concluded\n", 10);
 }
 
-void connectionsHandler()
+void handler(char* buffer)
 {
-    //fork para novos clients
-    pid_t child = fork();
+    int child = fork();
 
     if(child == 0)
     {
+        char* fifoToRead = malloc(sizeof(char)*30);
+        char* fifoToWrite = malloc(sizeof(char)*30);
+        
+        strcpy(fifoToRead,"client_server_fifo_");
+        strcat(fifoToRead, buffer);
+        
+        strcpy(fifoToWrite,"server_client_fifo_");
+        strcat(fifoToWrite, buffer);
 
-        //TODO
-        //smpre preparado para receber mais clientes
-        //estrutura para guardar os fifos
-        while(1){}
+        printf("Proc Filho!\n");
+        printf("FILE TO READ: %s\n",fifoToRead);
+        int client_server_fifo = open(fifoToRead, O_RDONLY);
 
+        char buffer[2048];
+        read(client_server_fifo, buffer, 2048);
+        close(client_server_fifo);
+
+        int server_client_fifo = open(fifoToWrite, O_WRONLY);
+        
+        if(strncmp(buffer, "proc-file", 9) == 0)
+        {
+            procfile(buffer,server_client_fifo);
+        }
+
+        if(strncmp(buffer, "status", 6) == 0)
+        {
+            getStatus(server_client_fifo);
+        }
+
+        if(strncmp(buffer, "proc-file priority",18) == 0)
+        {
+            // DO ADVANCED THINGS
+        }
+
+
+        close(server_client_fifo);
+
+        _exit(0);
     }
 }
 
@@ -322,48 +352,26 @@ int main(int argc, char* argv[])
     parseTransf(argv[1]);
     strcpy(filters_folder,argv[2]);
 
-    mkfifo("client_server_fifo", 0644);
+    mkfifo("connection_fifo", 0644);
+
+    printf("FIFO connection_fifo CREATED\n\n");
 
     while(1)
     {
-
-        printf("In while\n");
-
-        //connectionsHandler();
+        printf("In Connection while\n");
 
         char* buffer = calloc(2048, sizeof(char));
-        int client_server_fifo = open("client_server_fifo", O_RDONLY);
+        int connection_fifo = open("connection_fifo", O_RDONLY);
 
-        //DELETE
-        printf("FIFO CREATED\n");
-
-        if (client_server_fifo == -1) 
+        if (connection_fifo == -1) 
             printf("ERRO\n");
-        
-        //TODO
-        //Mudar este read para adicionar processos filhos para cada client
-        // for(i = 0; i < MAX; i++)
-        // c =  fork(), if( c == 0)
-        // read from fifo
-        read(client_server_fifo, buffer, 2048);
 
-        int server_client_fifo = open("server_client_fifo", O_WRONLY);
-        
-        if(strncmp(buffer, "proc-file", 9) == 0)
-        {
-            procfile(buffer);
-        }
+        read(connection_fifo, buffer, 2048);
+        close(connection_fifo);
 
-        if(strncmp(buffer, "status", 6) == 0)
-        {
-            getStatus(server_client_fifo);
-        }
+        printf("Client %s Connected!\n",buffer);
 
-        if(strncmp(buffer, "proc-file priority",18) == 0)
-        {
-            // DO ADVANCED THINGS
-        }
-
-        close(client_server_fifo);
+        handler(buffer);
+        close(connection_fifo);
     }
 }
