@@ -53,7 +53,7 @@ void printProcess()
     }
 }
 
-struct process* insert_client(int pid, char* buffer)
+void insert_client(int pid, char* buffer)
 {
     struct process *temp,*ptr;
     char* mess = malloc(sizeof(char)*300);
@@ -93,7 +93,6 @@ struct process* insert_client(int pid, char* buffer)
     if(start==NULL)
     {
         start=temp;
-        return start;
     }
     else
     {
@@ -103,7 +102,6 @@ struct process* insert_client(int pid, char* buffer)
             ptr=ptr->next ;
         }
         ptr->next =temp;
-        return temp;
     }
 }
 
@@ -112,10 +110,13 @@ void addRunningTransf(char** transformations)
     printf("Adicionado!\n");
     for(int i = 0; transformations[i]; i++)
     {
+        printf("TRANSF: %s\n", transformations[i]);
         for(int j = 0; j < MAX_TRANSF; j++) 
         {
-            if ((strcmp(transformations[i], transf[j].name) == 0))
+            if ((strcmp(transformations[i], transf[j].name) == 0)){
+                printf("UP WE GO\n");
                 transf[j].running++;         
+            }    
         }
     }
 }
@@ -124,6 +125,7 @@ void removeRunningTransf(char** transformations)
 {    
     for(int i = 0; i < 2; i++) 
     {
+        printf("REMOVING TRANSF: %s\n", transformations[i]);
         for(int j = 0; j < 7; j++) 
         {
             if ((strcmp(transformations[i], transf[j].name) == 0))
@@ -145,7 +147,6 @@ int checkConfig(char** transformations){
 
 void sigchild_handler(int signum)
 {
-    char* transf[2] = { "bcompress", "bdecompress" };
     int status;
     pid_t pid;
 
@@ -155,8 +156,11 @@ void sigchild_handler(int signum)
         struct process* temp = start;
         while(temp)
         {
-            if(temp->pid==pid && temp->message == 1)
-                removeRunningTransf(transf);
+            printf("pid: %d\n", temp->pid);
+            if(temp->pid==pid && temp->message == 1){
+                printf("removing\n");
+                removeRunningTransf(temp->transformations);
+            }    
             temp = temp->next;
         }
     }
@@ -424,21 +428,7 @@ void procfile(char* buffer, int server_client_fifo)
     * APPLY TRANSFORMATIONS
     */
 
-    for (int i = 0;i < MAX_TRANSF; ++i)
-    {
-        printf("transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
-        
-    }
-
     transform(input_files, output_files, transformations); 
-    
-    removeRunningTransf(transformations); 
-
-    for (int i = 0;i < MAX_TRANSF; ++i)
-    {
-        printf("transf %s: %d/%d (running/max)\n",transf[i].name,transf[i].running,transf[i].max);
-        
-    }
 
     for(int j = 0; j < i; j++){
         free(transformations[j]);
@@ -489,6 +479,14 @@ void handler(char* pid_m, char* message)
 
         _exit(0);
     }
+    else {
+        if (strncmp(message, "proc-file", 9) == 0){
+            char * insertMessage = strdup(message);
+
+            insert_client(child,insertMessage);
+        }
+
+    }
 }
 
 void pendingTasks()
@@ -506,10 +504,10 @@ void pendingTasks()
                 sprintf(pid_m,"%d",start->pid);
                 handler(pid_m, start->request);
             }
-            /*if(temp->next == NULL)
-                temp = start;
-            else
-                temp = temp->next;*/
+            if (temp->next)
+                temp = temp->next;
+            else 
+                temp = start;    
         }
 
         _exit(0);
@@ -552,7 +550,7 @@ int main(int argc, char* argv[])
 
     printf("FIFO connection_fifo CREATED\n\n");
 
-    //pendingTasks();
+    pendingTasks();
 
     while(1)
     {
@@ -567,41 +565,52 @@ int main(int argc, char* argv[])
         read(connection_fifo, buffer, 2048);
         close(connection_fifo);
 
-        printf("Buffer: %s\n", buffer);
-
         char* message = strsep(&buffer, "_");
 
         char* pid_m = malloc(sizeof(char)*10);
         strcpy(pid_m,message);    
         
-        int pid = atoi(pid_m);
         message = strsep(&buffer, "_");
-        
-        char * insertMessage = strdup(message);
 
-        struct process* proc = insert_client(pid,insertMessage);
+        char* new_message = strdup(message);
+
+        printf("PARSING\n");
+        char* token = strtok(message + 10, " ");
+        token = strtok(NULL, " ");
+        token = strtok(NULL, " ");
+        char** transformations = malloc(sizeof(char*)*MAX_TRANSF);
+        int i = 0;
+        while(token != NULL)
+        {
+            transformations[i] = malloc(sizeof(char) * strlen(token));
+            strcpy(transformations[i], token);
+            token = strtok(NULL, " \0");
+            i++;  
+        }
+        transformations[i] = '\0';
+        free(token);
+        printf("END PARSING\n");
+
         printf("Client %s Connected!\n",pid_m);
 
-
-        printProc(proc);
-        if(proc->message == 0)
-        {
-            handler(pid_m,message);
+        if(strncmp(new_message, "status", 6) == 0)
+        {   
+            handler(pid_m,new_message);
         }
-        else if(proc->message != 0 && checkConfig(proc->transformations) != 0)
+        else if((strncmp(new_message, "proc-file", 6) == 0) && checkConfig(transformations) != 0)
         {
-            addRunningTransf(proc->transformations); 
-            handler(pid_m,message);
+            addRunningTransf(transformations); 
+            handler(pid_m,new_message);
         }
         else
         {
-            proc->status = 1;
             char * tempfifo = malloc(sizeof(char)*50);
             strcpy(tempfifo,"client_server_fifo_");
-            strcat(tempfifo,pid);
-            int connection_fifo = open(tempfifo, O_WRONLY);
-            write(tempfifo,"Pending",7);
-            close(tempfifo);
+            strcat(tempfifo,pid_m);
+            printf("Twmo:%s\n",tempfifo);
+            int fifotemp = open(tempfifo, O_WRONLY);
+            write(fifotemp,"Pending",7);
+            close(fifotemp);
         }
 
         //printProcess();
